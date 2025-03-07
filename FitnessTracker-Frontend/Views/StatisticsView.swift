@@ -338,13 +338,21 @@ func parseDate(_ dateString: String) -> Date? {
 
 // Helper function to format dates for display
 func formatDateForDisplay(_ dateString: String) -> String {
-    guard let date = parseDate(dateString) else { return dateString }
+    let isoFormatter = ISO8601DateFormatter()
+    isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds] // Ensures milliseconds are parsed
+    isoFormatter.timeZone = TimeZone(secondsFromGMT: 0) // UTC time zone
+    
+    guard let date = isoFormatter.date(from: dateString) else {
+        print("Failed to parse date: \(dateString)") // Debugging log
+        return dateString // Return original if parsing fails
+    }
+    
     let formatter = DateFormatter()
-    formatter.dateStyle = .medium
-    formatter.timeStyle = .short
+    formatter.dateFormat = "EEEE, MMM d, yyyy • h:mm a" // Example: "Friday, Mar 7, 2025 • 7:44 AM"
+    formatter.timeZone = TimeZone.current // Convert to local time zone
+    
     return formatter.string(from: date)
 }
-
 // Update WorkoutRowView
 //struct WorkoutRowView: View {
 //    let workout: Workout
