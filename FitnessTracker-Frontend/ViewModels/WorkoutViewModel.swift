@@ -11,7 +11,7 @@ class WorkoutViewModel: ObservableObject {
     
     // MARK: - Workout CRUD Operations
     
-    func fetchWorkouts(type: String? = nil, startDate: Date? = nil, endDate: Date? = nil) {
+    func fetchWorkouts(type: String? = nil, startDate: String? = nil, endDate: String? = nil) {
         isLoading = true
         errorMessage = nil
         
@@ -22,21 +22,32 @@ class WorkoutViewModel: ObservableObject {
                 switch result {
                 case .success(let workouts):
                     self?.workouts = workouts
+                    // No error when data is empty - this is a valid state
                 case .failure(let error):
-                    self?.errorMessage = error.localizedDescription
+                    // Only show error for actual network/server errors
+                    if let networkError = error as? NetworkError, 
+                       case .invalidData = networkError {
+                        // Don't show error for empty data
+                        self?.workouts = []
+                    } else {
+                        self?.errorMessage = error.localizedDescription
+                    }
                 }
             }
         }
     }
     
-    func addWorkout(user: String, type: String, duration: Int, caloriesBurned: Int, date: Date, notes: String?) {
+    func addWorkout(user: String, type: String, duration: Int, caloriesBurned: Int, notes: String? = nil) {
         isLoading = true
         errorMessage = nil
         
-        // Create a temporary ID since the real one will be assigned by the server
-        let newWorkout = Workout(id: UUID().uuidString, user: user, type: type, duration: duration, caloriesBurned: caloriesBurned, date: date, notes: notes)
-        
-        networkManager.createWorkout(workout: newWorkout) { [weak self] result in
+        networkManager.createWorkout(
+            user: user,
+            type: type,
+            duration: duration,
+            caloriesBurned: caloriesBurned,
+            notes: notes
+        ) { [weak self] result in
             DispatchQueue.main.async {
                 self?.isLoading = false
                 
@@ -88,7 +99,7 @@ class WorkoutViewModel: ObservableObject {
         }
     }
     
-    func fetchCaloriesSummary(startDate: Date, endDate: Date) {
+    func fetchCaloriesSummary(startDate: String, endDate: String) {
         isLoading = true
         errorMessage = nil
         

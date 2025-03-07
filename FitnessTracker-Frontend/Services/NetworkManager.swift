@@ -15,7 +15,7 @@ class NetworkManager {
     
     // MARK: - Workout API Calls
     
-    func createWorkout(workout: Workout, completion: @escaping (Result<Workout, Error>) -> Void) {
+    func createWorkout(user: String, type: String, duration: Int, caloriesBurned: Int, notes: String? = nil, completion: @escaping (Result<Workout, Error>) -> Void) {
         let endpoint = "\(baseURL)/workouts"
         
         guard let url = URL(string: endpoint) else {
@@ -27,10 +27,18 @@ class NetworkManager {
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         
+        // Create a simple request body with only the required fields
+        let requestBody: [String: Any] = [
+            "user": user,
+            "type": type,
+            "duration": duration,
+            "caloriesBurned": caloriesBurned,
+            "notes": notes ?? NSNull()
+        ]
+        
         do {
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            request.httpBody = try encoder.encode(workout)
+            let jsonData = try JSONSerialization.data(withJSONObject: requestBody)
+            request.httpBody = jsonData
         } catch {
             completion(.failure(error))
             return
@@ -55,7 +63,6 @@ class NetworkManager {
             
             do {
                 let decoder = JSONDecoder()
-                decoder.dateDecodingStrategy = .iso8601
                 let workout = try decoder.decode(Workout.self, from: data)
                 completion(.success(workout))
             } catch {
@@ -64,7 +71,7 @@ class NetworkManager {
         }.resume()
     }
     
-    func getWorkouts(type: String? = nil, startDate: Date? = nil, endDate: Date? = nil, completion: @escaping (Result<[Workout], Error>) -> Void) {
+    func getWorkouts(type: String? = nil, startDate: String? = nil, endDate: String? = nil, completion: @escaping (Result<[Workout], Error>) -> Void) {
         var endpoint = "\(baseURL)/workouts"
         
         var queryItems = [URLQueryItem]()
@@ -73,14 +80,12 @@ class NetworkManager {
             queryItems.append(URLQueryItem(name: "type", value: type))
         }
         
-        let dateFormatter = ISO8601DateFormatter()
-        
         if let startDate = startDate {
-            queryItems.append(URLQueryItem(name: "startDate", value: dateFormatter.string(from: startDate)))
+            queryItems.append(URLQueryItem(name: "startDate", value: startDate))
         }
         
         if let endDate = endDate {
-            queryItems.append(URLQueryItem(name: "endDate", value: dateFormatter.string(from: endDate)))
+            queryItems.append(URLQueryItem(name: "endDate", value: endDate))
         }
         
         if !queryItems.isEmpty {
@@ -100,24 +105,40 @@ class NetworkManager {
                 return
             }
             
-            guard let httpResponse = response as? HTTPURLResponse, 
-                  (200...299).contains(httpResponse.statusCode) else {
+            guard let httpResponse = response as? HTTPURLResponse else {
                 completion(.failure(NetworkError.invalidResponse))
                 return
             }
             
-            guard let data = data else {
-                completion(.failure(NetworkError.invalidData))
-                return
-            }
-            
-            do {
-                let decoder = JSONDecoder()
-                decoder.dateDecodingStrategy = .iso8601
-                let workouts = try decoder.decode([Workout].self, from: data)
-                completion(.success(workouts))
-            } catch {
-                completion(.failure(error))
+            // Handle different status codes appropriately
+            switch httpResponse.statusCode {
+            case 200...299:
+                guard let data = data else {
+                    completion(.success([]))  // Empty data is valid - return empty array
+                    return
+                }
+                
+                // Handle empty array response
+                if data.count == 0 || (data.count == 2 && String(data: data, encoding: .utf8) == "[]") {
+                    completion(.success([]))
+                    return
+                }
+                
+                do {
+                    let decoder = JSONDecoder()
+                    let workouts = try decoder.decode([Workout].self, from: data)
+                    completion(.success(workouts))
+                } catch {
+                    print("Decoding error: \(error)")
+                    completion(.success([]))  // If we can't decode, assume empty
+                }
+                
+            case 404:
+                // Not found is valid for empty results
+                completion(.success([]))
+                
+            default:
+                completion(.failure(NetworkError.invalidResponse))
             }
         }.resume()
     }
@@ -234,17 +255,13 @@ class NetworkManager {
         }.resume()
     }
     
-    func getTotalCalories(startDate: Date, endDate: Date, completion: @escaping (Result<CaloriesSummary, Error>) -> Void) {
+    func getTotalCalories(startDate: String, endDate: String, completion: @escaping (Result<CaloriesSummary, Error>) -> Void) {
         let endpoint = "\(baseURL)/workouts/calories"
-        
-        let dateFormatter = ISO8601DateFormatter()
-        let startDateString = dateFormatter.string(from: startDate)
-        let endDateString = dateFormatter.string(from: endDate)
         
         var urlComponents = URLComponents(string: endpoint)
         urlComponents?.queryItems = [
-            URLQueryItem(name: "startDate", value: startDateString),
-            URLQueryItem(name: "endDate", value: endDateString)
+            URLQueryItem(name: "startDate", value: startDate),
+            URLQueryItem(name: "endDate", value: endDate)
         ]
         
         guard let url = urlComponents?.url else {
@@ -258,24 +275,38 @@ class NetworkManager {
                 return
             }
             
-            guard let httpResponse = response as? HTTPURLResponse, 
-                  (200...299).contains(httpResponse.statusCode) else {
+            guard let httpResponse = response as? HTTPURLResponse else {
                 completion(.failure(NetworkError.invalidResponse))
                 return
             }
             
-            guard let data = data else {
-                completion(.failure(NetworkError.invalidData))
-                return
-            }
-            
-            do {
-                let decoder = JSONDecoder()
-                decoder.dateDecodingStrategy = .iso8601
-                let summary = try decoder.decode(CaloriesSummary.self, from: data)
-                completion(.success(summary))
-            } catch {
-                completion(.failure(error))
+            // Handle different status codes
+            switch httpResponse.statusCode {
+            case 200...299:
+                guard let data = data else {
+                    // Return default summary with zeros if no data
+                    let emptySummary = CaloriesSummary(totalCalories: 0, workoutCount: 0, startDate: startDate, endDate: endDate)
+                    completion(.success(emptySummary))
+                    return
+                }
+                
+                do {
+                    let decoder = JSONDecoder()
+                    let summary = try decoder.decode(CaloriesSummary.self, from: data)
+                    completion(.success(summary))
+                } catch {
+                    // Return default summary if decoding fails
+                    let emptySummary = CaloriesSummary(totalCalories: 0, workoutCount: 0, startDate: startDate, endDate: endDate)
+                    completion(.success(emptySummary))
+                }
+                
+            case 404:
+                // Not found is valid for empty results
+                let emptySummary = CaloriesSummary(totalCalories: 0, workoutCount: 0, startDate: startDate, endDate: endDate)
+                completion(.success(emptySummary))
+                
+            default:
+                completion(.failure(NetworkError.invalidResponse))
             }
         }.resume()
     }

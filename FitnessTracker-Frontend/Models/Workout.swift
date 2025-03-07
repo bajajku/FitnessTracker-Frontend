@@ -1,17 +1,28 @@
 import Foundation
 
 struct Workout: Identifiable, Codable {
-    var id: String
-    var user: String
-    var type: String
-    var duration: Int
-    var caloriesBurned: Int
-    var date: Date
-    var notes: String?
+    let id: String
+    let user: String
+    let type: String
+    let duration: Int
+    let caloriesBurned: Int
+    let date: String
+    let createdAt: String
+    let updatedAt: String
+    let notes: String?
+    let v: Int
     
     enum CodingKeys: String, CodingKey {
         case id = "_id"
-        case user, type, duration, caloriesBurned, date, notes
+        case user
+        case type
+        case duration
+        case caloriesBurned
+        case date
+        case createdAt
+        case updatedAt
+        case v = "__v"
+        case notes
     }
 }
 
@@ -26,4 +37,4 @@ enum WorkoutType: String, CaseIterable, Identifiable {
     case other = "Other"
     
     var id: String { self.rawValue }
-} 
+}
